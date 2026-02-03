@@ -3,6 +3,7 @@ import time
 import json
 import requests
 import random
+import subprocess
 from prometheus_client import start_http_server, Gauge
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime, timezone
@@ -273,14 +274,23 @@ CATCHING_UP = Gauge(
 
 def fetch_tendermint_status() -> Optional[Dict[str, Any]]:
     """
-    Fetch status from local Tendermint RPC endpoint.
+    Fetch status from Tendermint RPC endpoint via node container.
     Returns parsed JSON or None on failure.
     """
     url = f"{BASE_URL}{TENDERMINT_STATUS_ENDPOINT}"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        # Execute wget inside node container
+        result = subprocess.run(
+            ["docker", "exec", "node", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return None
+
+        data = json.loads(result.stdout)
         return data.get("result", {})
     except Exception as exc:
         print(f"[ERROR] Failed to fetch Tendermint status from {url}: {exc}")
