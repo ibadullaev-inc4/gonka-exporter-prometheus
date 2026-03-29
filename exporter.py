@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 # CONFIGURATION
 # =============================================================================
 
-# Base URLs
+# Base URLs - used in docker exec commands
 BASE_URL = os.getenv("GONKA_BASE_URL", "http://localhost:26657").rstrip("/")
 NODE_BASE_URL = os.getenv("NODE_BASE_URL", "http://localhost:9200/admin/v1").rstrip("/")
 

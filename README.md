@@ -158,6 +158,7 @@ This exporter supports two deployment modes:
 
 - Docker installed on your server(s)
 - Running Gonka node containers (`node`, `api`, `proxy`)
+- **Docker socket access:** The exporter container needs `-v /var/run/docker.sock:/var/run/docker.sock` to execute `docker exec` commands
 - **Note:** As of proxy v0.2.8, ports 26657, 1317, 9000, and 9200 are blocked externally. The exporter accesses these via `docker exec` from inside the container network.
 - Your Gonka participant address (starts with `gonka1...`)
 
@@ -191,6 +192,7 @@ docker run -d \
   --name gonka-network-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e ENABLE_NODE_FETCH=false \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
@@ -198,6 +200,8 @@ docker run -d \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -230,15 +234,16 @@ docker run -d \
   --name gonka-combined-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e ENABLE_NODE_FETCH=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
-  -e GONKA_BASE_URL=http://localhost:26657 \
-  -e NODE_BASE_URL=http://localhost:9200/admin/v1 \
   -e EXPORTER_PORT=9401 \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -274,15 +279,16 @@ docker run -d \
   --name gonka-node-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=false \
   -e ENABLE_NODE_FETCH=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
-  -e GONKA_BASE_URL=http://localhost:26657 \
-  -e NODE_BASE_URL=http://localhost:9200/admin/v1 \
   -e EXPORTER_PORT=9401 \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -402,11 +408,12 @@ docker rm gonka-network-exporter
 # Rebuild image
 docker build -t gonka-exporter .
 
-# Run with same configuration as before
+# Run with same configuration as before (don't forget Docker socket!)
 docker run -d \
   --name gonka-network-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
   gonka-exporter
