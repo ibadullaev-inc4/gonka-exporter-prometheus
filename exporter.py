@@ -16,16 +16,16 @@ from datetime import datetime, timezone
 BASE_URL = os.getenv("GONKA_BASE_URL", "http://localhost:26657").rstrip("/")
 NODE_BASE_URL = os.getenv("NODE_BASE_URL", "http://localhost:9200/admin/v1").rstrip("/")
 
-# Network API URL (always localhost to reduce load on external nodes)
-NETWORK_API_URL = "http://localhost:8000"
+# Network API URL - now accessed via docker exec since proxy blocks these ports
+# The api container exposes port 9000 internally
+NETWORK_API_URL = "http://localhost:9000"
 
 # Block height nodes - check multiple for reliability when doing network monitoring
+# Note: Many nodes now block /chain-rpc due to proxy updates, keeping only accessible ones
 BLOCK_HEIGHT_NODES = [
     "http://node1.gonka.ai:8000",
     "http://node2.gonka.ai:8000",
-    "http://node3.gonka.ai:8000",
-    "http://185.216.21.98:8000",
-    "http://36.189.234.197:18026",
+    "https://node3.gonka.ai",
     "http://36.189.234.237:17241",
     "http://47.236.26.199:8000",
     "http://47.236.19.22:18000",
@@ -300,8 +300,43 @@ def fetch_tendermint_status() -> Optional[Dict[str, Any]]:
 def fetch_chain_status_from_node(node_url: str) -> Optional[Dict[str, Any]]:
     """
     Fetch chain status from a specific node.
+    For localhost, uses docker exec since ports are blocked.
+    For external nodes, tries direct HTTP (may fail if they also block /chain-rpc).
     Returns parsed JSON or None on failure.
     """
+    # Check if this is localhost - use docker exec to access from inside container
+    if "localhost" in node_url or "127.0.0.1" in node_url:
+        # Use Cosmos SDK REST API endpoint (chain-api port 1317) instead of chain-rpc
+        url = "http://localhost:1317/cosmos/base/tendermint/v1beta1/blocks/latest"
+        try:
+            # Execute wget inside proxy container to access node:1317
+            result = subprocess.run(
+                ["docker", "exec", "proxy", "wget", "-qO-", url],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                print(f"[ERROR] wget failed accessing chain-api: {result.stderr}")
+                return None
+
+            data = json.loads(result.stdout)
+            # Parse Cosmos SDK response format to Tendermint RPC format for compatibility
+            block = data.get("block", {})
+            header = block.get("header", {})
+
+            return {
+                "sync_info": {
+                    "latest_block_height": header.get("height", "0"),
+                    "latest_block_time": header.get("time", ""),
+                    "catching_up": False  # Assume synced if we can query
+                }
+            }
+        except Exception as exc:
+            print(f"[ERROR] Failed to fetch chain status via docker exec: {exc}")
+            return None
+
+    # For external nodes, try direct HTTP (will fail if /chain-rpc is blocked on their end)
     url = f"{node_url}{CHAIN_STATUS_ENDPOINT}"
     try:
         response = requests.get(url, timeout=5)
@@ -353,14 +388,23 @@ def fetch_max_block_height_from_nodes() -> Optional[Tuple[int, str]]:
 
 def fetch_participants() -> Optional[Dict[str, Any]]:
     """
-    Fetch participants data from local network API.
+    Fetch participants data from local network API via docker exec.
     Returns parsed JSON or None on failure.
     """
     url = f"{NETWORK_API_URL}{PARTICIPANTS_ENDPOINT}"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        # Execute wget inside api container
+        result = subprocess.run(
+            ["docker", "exec", "api", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return None
+
+        return json.loads(result.stdout)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch participants from {url}: {exc}")
         return None
@@ -368,14 +412,23 @@ def fetch_participants() -> Optional[Dict[str, Any]]:
 
 def fetch_pricing() -> Optional[Dict[str, Any]]:
     """
-    Fetch pricing data from local network API.
+    Fetch pricing data from local network API via docker exec.
     Returns parsed JSON or None on failure.
     """
     url = f"{NETWORK_API_URL}{PRICING_ENDPOINT}"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        # Execute wget inside api container
+        result = subprocess.run(
+            ["docker", "exec", "api", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return None
+
+        return json.loads(result.stdout)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch pricing from {url}: {exc}")
         return None
@@ -383,14 +436,23 @@ def fetch_pricing() -> Optional[Dict[str, Any]]:
 
 def fetch_models() -> Optional[Dict[str, Any]]:
     """
-    Fetch models data from local network API.
+    Fetch models data from local network API via docker exec.
     Returns parsed JSON or None on failure.
     """
     url = f"{NETWORK_API_URL}{MODELS_ENDPOINT}"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        # Execute wget inside api container
+        result = subprocess.run(
+            ["docker", "exec", "api", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return None
+
+        return json.loads(result.stdout)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch models from {url}: {exc}")
         return None
@@ -398,14 +460,23 @@ def fetch_models() -> Optional[Dict[str, Any]]:
 
 def fetch_participant_stats(address: str) -> Optional[Dict[str, Any]]:
     """
-    Fetch detailed stats for a specific participant from local network API.
+    Fetch detailed stats for a specific participant from local network API via docker exec.
     Returns parsed JSON or None on failure.
     """
     url = f"{NETWORK_API_URL}{PARTICIPANT_STATS_ENDPOINT}/{address}"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        # Execute wget inside api container
+        result = subprocess.run(
+            ["docker", "exec", "api", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return None
+
+        return json.loads(result.stdout)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch participant stats for {address}: {exc}")
         return None
@@ -413,14 +484,23 @@ def fetch_participant_stats(address: str) -> Optional[Dict[str, Any]]:
 
 def fetch_nodes() -> List[Dict[str, Any]]:
     """
-    Fetch list of nodes from admin API.
+    Fetch list of nodes from admin API via docker exec.
     Returns list of node dicts or empty list on failure.
     """
-    url = f"{NODE_BASE_URL}/nodes"
+    url = "http://localhost:9200/admin/v1/nodes"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        # Execute wget inside api container
+        result = subprocess.run(
+            ["docker", "exec", "api", "wget", "-qO-", url],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[ERROR] wget failed with return code {result.returncode}: {result.stderr}")
+            return []
+
+        return json.loads(result.stdout)
     except Exception as exc:
         print(f"[ERROR] Failed to fetch nodes from {url}: {exc}")
         return []
