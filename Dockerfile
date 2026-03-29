@@ -2,6 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install Docker CLI (needed for docker exec commands)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements file
 COPY requirements.txt .
 
