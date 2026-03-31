@@ -2,6 +2,8 @@
 
 A comprehensive Prometheus exporter for the Gonka blockchain network that provides metrics for network-wide monitoring, node performance, participant statistics, and blockchain health.
 
+> **⚠️ Proxy v0.2.8 Update:** As of January 2026, Gonka nodes use a new proxy with rate limiting and DDoS protection. Ports 26657, 1317, 9000, and 9200 are now blocked externally. This exporter has been updated to access services via `docker exec` from inside the container network.
+
 ## Table of Contents
 
 - [Features](#features)
@@ -63,8 +65,8 @@ This exporter supports two deployment modes:
 | `gonka_chain_catching_up` | Whether node is syncing (1) or synced (0) | - | Tendermint RPC or public nodes |
 
 **Data Source:**
-- **Network mode**: Queries `http://node1.gonka.ai:8000`, `http://node2.gonka.ai:8000`, `http://node3.gonka.ai:8000` for block height (takes max)
-- **Local mode**: Queries `http://localhost:26657/status` (Tendermint RPC)
+- **Network mode**: Queries external nodes for block height (takes max). Note: Many nodes now block `/chain-rpc` endpoint.
+- **Local mode**: Accessed via `docker exec node wget http://localhost:26657/status` or `docker exec proxy wget http://localhost:1317/...` (Cosmos SDK REST API)
 
 ---
 
@@ -77,7 +79,7 @@ This exporter supports two deployment modes:
 | `gonka_network_participant_weight` | Weight of each participant in the network | `participant` | `/v1/epochs/current/participants` |
 | `gonka_network_node_poc_weight` | PoC weight per node across network | `participant`, `node_id` | `/v1/epochs/current/participants` |
 
-**Data Source:** `http://localhost:8000/v1/epochs/current/participants`
+**Data Source:** Accessed via `docker exec api wget http://localhost:9000/v1/epochs/current/participants`
 
 #### Pricing Metrics
 
@@ -88,7 +90,7 @@ This exporter supports two deployment modes:
 | `gonka_pricing_model_price_per_token` | Price per token for each model | `model_id` | `/v1/pricing` |
 | `gonka_pricing_model_units_per_token` | Compute units per token | `model_id` | `/v1/pricing` |
 
-**Data Source:** `http://localhost:8000/v1/pricing`
+**Data Source:** Accessed via `docker exec api wget http://localhost:9000/v1/pricing`
 
 #### Model Metrics
 
@@ -98,7 +100,7 @@ This exporter supports two deployment modes:
 | `gonka_model_throughput_per_nonce` | Throughput per nonce | `model_id` | `/v1/models` |
 | `gonka_model_validation_threshold` | Validation threshold (value × 10^exponent) | `model_id` | `/v1/models` |
 
-**Data Source:** `http://localhost:8000/v1/models`
+**Data Source:** Accessed via `docker exec api wget http://localhost:9000/v1/models`
 
 ---
 
@@ -114,7 +116,7 @@ This exporter supports two deployment modes:
 | `gonka_participant_validated_inferences` | Successful validations this epoch | `participant` | `/chain-api/.../participant/{address}` |
 | `gonka_participant_invalidated_inferences` | Failed validations this epoch | `participant` | `/chain-api/.../participant/{address}` |
 
-**Data Source:** `http://localhost:8000/chain-api/productscience/inference/inference/participant/{address}`
+**Data Source:** Accessed via `docker exec api wget http://localhost:9000/chain-api/productscience/inference/inference/participant/{address}`
 
 ---
 
@@ -145,8 +147,8 @@ This exporter supports two deployment modes:
 - `2` = VALIDATING
 
 **Data Sources:**
-- Node info: `http://localhost:9200/admin/v1/nodes`
-- GPU stats: `http://{node_host}:{poc_port}/v3.0.8/api/v1/gpu/devices`
+- Node info: Accessed via `docker exec api wget http://localhost:9200/admin/v1/nodes`
+- GPU stats: Direct HTTP to `http://{node_host}:{poc_port}/v3.0.8/api/v1/gpu/devices` (still accessible)
 
 ---
 
@@ -155,10 +157,9 @@ This exporter supports two deployment modes:
 ### Prerequisites
 
 - Docker installed on your server(s)
-- Access to Gonka node endpoints:
-  - Tendermint RPC: `localhost:26657` (for local monitoring)
-  - Network API: `localhost:8000` (for network/participant data)
-  - Admin API: `localhost:9200` (for node monitoring)
+- Running Gonka node containers (`node`, `api`, `proxy`)
+- **Docker socket access:** The exporter container needs `-v /var/run/docker.sock:/var/run/docker.sock` to execute `docker exec` commands
+- **Note:** As of proxy v0.2.8, ports 26657, 1317, 9000, and 9200 are blocked externally. The exporter accesses these via `docker exec` from inside the container network.
 - Your Gonka participant address (starts with `gonka1...`)
 
 ### Clone the Repository
@@ -191,6 +192,7 @@ docker run -d \
   --name gonka-network-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e ENABLE_NODE_FETCH=false \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
@@ -198,6 +200,8 @@ docker run -d \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -230,15 +234,16 @@ docker run -d \
   --name gonka-combined-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e ENABLE_NODE_FETCH=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
-  -e GONKA_BASE_URL=http://localhost:26657 \
-  -e NODE_BASE_URL=http://localhost:9200/admin/v1 \
   -e EXPORTER_PORT=9401 \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -274,15 +279,16 @@ docker run -d \
   --name gonka-node-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=false \
   -e ENABLE_NODE_FETCH=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
-  -e GONKA_BASE_URL=http://localhost:26657 \
-  -e NODE_BASE_URL=http://localhost:9200/admin/v1 \
   -e EXPORTER_PORT=9401 \
   -e REFRESH_INTERVAL=30 \
   gonka-exporter
 ```
+
+**Note:** The `-v /var/run/docker.sock:/var/run/docker.sock` mount is **required** for the exporter to execute `docker exec` commands to access blocked ports.
 
 **Verify:**
 ```bash
@@ -324,8 +330,8 @@ All configuration is done via environment variables:
 | `EXPORT_NETWORK_METRICS` | Enable network-wide metrics (true/false) | `false` | No |
 | `ENABLE_NODE_FETCH` | Enable local node monitoring (true/false) | `true` | No |
 | `PARTICIPANT_ADDRESS` | Your Gonka participant address (gonka1...) | *(empty)* | Recommended |
-| `GONKA_BASE_URL` | Tendermint RPC URL for local monitoring | `http://localhost:26657` | No |
-| `NODE_BASE_URL` | Admin API URL for node monitoring | `http://localhost:9200/admin/v1` | No |
+| `GONKA_BASE_URL` | *(Deprecated)* Previously for Tendermint RPC, now accessed via docker exec | `http://localhost:26657` | No |
+| `NODE_BASE_URL` | *(Deprecated)* Previously for Admin API, now accessed via docker exec | `http://localhost:9200/admin/v1` | No |
 | `EXPORTER_PORT` | Port to expose Prometheus metrics | `9401` | No |
 | `REFRESH_INTERVAL` | Seconds between metric updates | `30` | No |
 
@@ -402,11 +408,12 @@ docker rm gonka-network-exporter
 # Rebuild image
 docker build -t gonka-exporter .
 
-# Run with same configuration as before
+# Run with same configuration as before (don't forget Docker socket!)
 docker run -d \
   --name gonka-network-exporter \
   --network host \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e EXPORT_NETWORK_METRICS=true \
   -e PARTICIPANT_ADDRESS=gonka1abc...youraddress \
   gonka-exporter
@@ -465,7 +472,8 @@ docker logs gonka-network-exporter | grep ERROR
 - Check logs for connection errors to `node1`, `node2`, `node3.gonka.ai`
 
 **For local monitoring:**
-- Ensure Tendermint RPC is accessible: `curl http://localhost:26657/status`
+- Ensure containers are running: `docker ps | grep -E "node|api|proxy"`
+- Test access: `docker exec node wget -qO- http://localhost:26657/status`
 
 ---
 
